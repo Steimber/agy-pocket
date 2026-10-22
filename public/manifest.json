@@ -1,11 +1,11 @@
 {
-  "name": "Agy Pocket",
-  "short_name": "AgyPocket",
-  "description": "Always-On Mobile PWA Bridge for Antigravity Desktop",
+  "name": "Antigravity Pocket",
+  "short_name": "Antigravity",
+  "description": "Controla tu Antigravity de PC desde el móvil con sesión persistente de 90 días.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0c0b09",
-  "theme_color": "#0c0b09",
+  "background_color": "#f9f9f9",
+  "theme_color": "#f9f9f9",
   "orientation": "portrait",
   "icons": [
     {

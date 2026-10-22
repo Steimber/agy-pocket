@@ -23,6 +23,7 @@ export async function GET(request) {
       model: 'Gemini',
       preset: 'Turbo',
       isBusy: false,
+      projects: [],
       conversations: [],
       bridgeError: proxied.data?.error || null
     });

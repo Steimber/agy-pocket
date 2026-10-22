@@ -76,20 +76,25 @@ export async function POST(request) {
     const body = await request.json();
     const text = String(body.text || '').trim();
     const conversationId = body.conversationId || null;
+    const attachments = Array.isArray(body.attachments) ? body.attachments : [];
 
-    if (!text) {
-      return NextResponse.json({ ok: false, error: 'Escribe un mensaje.' }, { status: 400 });
+    if (!text && attachments.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'Escribí un mensaje o adjuntá un archivo.' },
+        { status: 400 }
+      );
     }
 
     if (shouldProxyToRemoteBridge(request)) {
       const proxied = await proxyToRemoteBridge(request, '/api/messages', 'POST', {
         text,
-        conversationId
+        conversationId,
+        attachments
       });
       return NextResponse.json(proxied.data, { status: proxied.ok ? 200 : proxied.status });
     }
 
-    const res = await sendPromptToAntigravity(text, conversationId);
+    const res = await sendPromptToAntigravity(text, conversationId, attachments);
     if (!res.ok) {
       return NextResponse.json(res, { status: 502 });
     }

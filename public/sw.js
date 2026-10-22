@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agy-pocket-shell-v1';
+const CACHE_NAME = 'agy-pocket-shell-v2';
 const SHELL_ASSETS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', event => {

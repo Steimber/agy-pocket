@@ -145,3 +145,27 @@ test('agy-bridge: parseTranscriptStepsToMessages groups consecutive PLANNER_RESP
   assert.equal(isValidConversationId('451012b4-4236-43f3-9be5-13089dcc32c2'), true);
   assert.equal(isValidConversationId('../etc/passwd'), false);
 });
+
+test('agy-bridge: parseTranscriptStepsToMessages preserves media attachments and safely handles % in filenames', () => {
+  const steps = [
+    {
+      step_index: 20,
+      type: 'USER_INPUT',
+      source: 'USER_EXPLICIT',
+      status: 'DONE',
+      created_at: '2026-10-21T21:00:00Z',
+      content: '',
+      media: [
+        {
+          mime_type: 'image/png',
+          uri: 'C:\\Users\\randy\\.gemini\\capture_100%.png'
+        }
+      ]
+    }
+  ];
+  const messages = parseTranscriptStepsToMessages(steps);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].role, 'user');
+  assert.equal(messages[0].media.length, 1);
+  assert.equal(messages[0].media[0].name, 'capture_100%.png');
+});
