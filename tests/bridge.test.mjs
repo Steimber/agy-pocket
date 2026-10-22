@@ -13,7 +13,10 @@ import {
   isValidConversationId,
   extractCleanUserText,
   summarizeToolCall,
-  parseTranscriptStepsToMessages
+  parseTranscriptStepsToMessages,
+  normalizeLocalFilePathInput,
+  isBlockedSensitivePath,
+  getMimeTypeForFile
 } from '../lib/agy-bridge.js';
 
 import {
@@ -232,4 +235,49 @@ test('push-manager: validates HTTPS push subscriptions and cleans markdown notif
 
   // VAPID subject must use a valid domain with a TLD so Apple Web Push (web.push.apple.com) never returns 403 BadJwtToken
   assert.match(VAPID_SUBJECT, /^mailto:[^@]+@[^@.]+\.[a-z]{2,}$/i);
+});
+
+test('file-sharing: allows user Downloads/Documents files and blocks outside-home or sensitive files', () => {
+  const home = 'C:\\Users\\randy';
+  assert.equal(
+    isBlockedSensitivePath(
+      'file:///C:/Users/randy/Downloads/Video/mineral-likes-reel-voz.mp4',
+      home
+    ),
+    false
+  );
+  assert.equal(
+    isBlockedSensitivePath('C:\\Users\\randy\\Documents\\NoWork\\app\\.env.local', home),
+    true
+  );
+  assert.equal(
+    isBlockedSensitivePath(
+      'C:\\Users\\randy\\Documents\\NoWork\\agy-pocket\\.agy-push-state.json',
+      home
+    ),
+    true
+  );
+  assert.equal(
+    isBlockedSensitivePath('C:\\Users\\randy\\.ssh\\id_rsa', home),
+    true
+  );
+  assert.equal(
+    isBlockedSensitivePath('C:\\Users\\randy\\AppData\\Roaming\\Antigravity\\DevToolsActivePort', home),
+    true
+  );
+  assert.equal(
+    isBlockedSensitivePath('C:\\Windows\\System32\\drivers\\etc\\hosts', home),
+    true
+  );
+  assert.equal(
+    isBlockedSensitivePath('C:\\Users\\randy\\.gemini\\oauth_creds.json', home),
+    true
+  );
+  assert.equal(
+    normalizeLocalFilePathInput(
+      'file:///C:/Users/randy/My%20Videos/render_100%.mp4'
+    ),
+    'C:\\Users\\randy\\My Videos\\render_100%.mp4'
+  );
+  assert.equal(getMimeTypeForFile('video.mp4'), 'video/mp4');
 });

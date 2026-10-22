@@ -710,6 +710,90 @@ body {
   color: inherit;
 }
 
+.md-file-download {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.md-file-download.is-media {
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--card-border);
+  background: var(--card);
+}
+
+.md-file-download:active {
+  background: var(--secondary);
+}
+
+.shared-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.shared-file-card {
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--card);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.shared-file-video,
+.shared-file-image {
+  width: 100%;
+  max-height: 320px;
+  background: #0a0a0a;
+  object-fit: contain;
+  display: block;
+}
+
+.shared-file-audio {
+  width: 100%;
+  padding: 8px 10px 0;
+}
+
+.shared-file-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--sidebar);
+  border-top: 1px solid var(--card-border);
+}
+
+.shared-file-name {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.shared-file-dl-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.74rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.shared-file-dl-btn:active {
+  opacity: 0.85;
+}
+
 .md-link {
   color: var(--primary);
   text-decoration: underline;

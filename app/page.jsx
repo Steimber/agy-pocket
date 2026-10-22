@@ -13,7 +13,8 @@ import {
   Paperclip,
   PanelLeft,
   Bell,
-  BellRing
+  BellRing,
+  Download
 } from 'lucide-react';
 
 const TOKEN_STORAGE_KEY = 'agy_pocket_token_v1';
@@ -211,6 +212,60 @@ function splitMarkdownBlocks(rawText) {
   return parts;
 }
 
+const VIDEO_EXT_RE = /\.(mp4|mov|webm|mkv)$/i;
+const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|svg)$/i;
+const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|flac)$/i;
+const DOC_EXT_RE = /\.(pdf|zip|pptx|docx|xlsx|csv)$/i;
+
+function buildLocalFileApiUrl(rawFileUrl, download = true) {
+  const cleanPath = String(rawFileUrl || '')
+    .trim()
+    .replace(/#L\d+(?:-L?\d+)?$/i, '');
+  const token =
+    typeof window !== 'undefined' ? localStorage.getItem(TOKEN_STORAGE_KEY) : null;
+  const dl = download ? '1' : '0';
+  return `/api/file?path=${encodeURIComponent(cleanPath)}&download=${dl}${
+    token ? `&token=${encodeURIComponent(token)}` : ''
+  }`;
+}
+
+function extractSharedLocalFiles(markdownText) {
+  const str = String(markdownText || '');
+  if (!str) return [];
+  const linkRe = /\[([^\]]+)\]\(((?:file:\/\/\/?|[a-zA-Z]:[\\/])(?:[^()\s]|\([^()\s]*\))+)\)/gi;
+  const seen = new Set();
+  const out = [];
+  let m;
+  while ((m = linkRe.exec(str)) !== null) {
+    const rawUrl = m[2].replace(/#L\d+(?:-L?\d+)?$/i, '');
+    let decoded = rawUrl;
+    try {
+      decoded = decodeURIComponent(rawUrl.replace(/%(?![0-9a-fA-F]{2})/g, '%25'));
+    } catch {}
+    const baseName = decoded.split(/[\\/]/).pop() || m[1];
+    const kind = VIDEO_EXT_RE.test(baseName)
+      ? 'video'
+      : IMAGE_EXT_RE.test(baseName)
+        ? 'image'
+        : AUDIO_EXT_RE.test(baseName)
+          ? 'audio'
+          : DOC_EXT_RE.test(baseName)
+            ? 'doc'
+            : null;
+    if (!kind) continue;
+    const key = rawUrl.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      label: m[1].replace(/[`*]/g, '').trim() || baseName,
+      fileName: baseName,
+      url: rawUrl,
+      kind
+    });
+  }
+  return out;
+}
+
 function renderInlineMarkdown(text, keyPrefix = 'in') {
   const str = String(text || '');
   if (!str) return null;
@@ -234,13 +289,33 @@ function renderInlineMarkdown(text, keyPrefix = 'in') {
       // Link: [label](url)
       const label = match[2];
       const url = match[3];
+      const isConversationLink = /^conversation:\/\//i.test(url);
       const isLocalFile =
-        /^(file|conversation):\/\//i.test(url) || /^[a-zA-Z]:[\\/]/.test(url);
-      if (isLocalFile) {
+        /^file:\/\//i.test(url) || /^[a-zA-Z]:[\\/]/.test(url);
+      if (isConversationLink) {
         nodes.push(
           <span key={key} className="md-file-pill">
             {renderInlineMarkdown(label, `${key}-lbl`)}
           </span>
+        );
+      } else if (isLocalFile) {
+        const cleanUrl = url.replace(/#L\d+(?:-L?\d+)?$/i, '');
+        const isMediaOrDoc =
+          VIDEO_EXT_RE.test(cleanUrl) ||
+          IMAGE_EXT_RE.test(cleanUrl) ||
+          AUDIO_EXT_RE.test(cleanUrl) ||
+          DOC_EXT_RE.test(cleanUrl);
+        nodes.push(
+          <a
+            key={key}
+            href={buildLocalFileApiUrl(url, true)}
+            download
+            className={`md-file-pill md-file-download ${isMediaOrDoc ? 'is-media' : ''}`}
+            title="Descargar archivo de tu PC"
+          >
+            {renderInlineMarkdown(label, `${key}-lbl`)}
+            {isMediaOrDoc && <Download size={11} style={{ marginLeft: 4, flexShrink: 0 }} />}
+          </a>
         );
       } else if (/^https?:\/\//i.test(url)) {
         nodes.push(
@@ -401,6 +476,7 @@ function parseProseBlocks(proseText) {
 function AssistantMessageBody({ content }) {
   const [copiedIdx, setCopiedIdx] = useState(null);
   const blocks = useMemo(() => splitMarkdownBlocks(content), [content]);
+  const sharedFiles = useMemo(() => extractSharedLocalFiles(content), [content]);
 
   const handleCopy = (code, idx) => {
     navigator.clipboard?.writeText(code).catch(() => {});
@@ -485,6 +561,57 @@ function AssistantMessageBody({ content }) {
           </React.Fragment>
         );
       })}
+
+      {sharedFiles.length > 0 && (
+        <div className="shared-files-list">
+          {sharedFiles.map(file => {
+            const inlineUrl = buildLocalFileApiUrl(file.url, false);
+            const downloadUrl = buildLocalFileApiUrl(file.url, true);
+            return (
+              <div key={file.url} className="shared-file-card">
+                {file.kind === 'video' && (
+                  <video
+                    className="shared-file-video"
+                    controls
+                    playsInline
+                    preload="metadata"
+                    src={inlineUrl}
+                  />
+                )}
+                {file.kind === 'image' && (
+                  <img
+                    className="shared-file-image"
+                    src={inlineUrl}
+                    alt={file.fileName}
+                    loading="lazy"
+                  />
+                )}
+                {file.kind === 'audio' && (
+                  <audio
+                    className="shared-file-audio"
+                    controls
+                    preload="metadata"
+                    src={inlineUrl}
+                  />
+                )}
+                <div className="shared-file-footer">
+                  <span className="shared-file-name" title={file.fileName}>
+                    {file.fileName}
+                  </span>
+                  <a
+                    href={downloadUrl}
+                    download={file.fileName}
+                    className="shared-file-dl-btn"
+                  >
+                    <Download size={13} />
+                    <span>Descargar</span>
+                  </a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
