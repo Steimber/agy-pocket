@@ -1423,9 +1423,8 @@ export default function AgyPocketPage() {
           >
             {pushStatus === 'active' || pushStatus === 'local' ? (
               <>
+                <BellRing size={16} />
                 <span className="push-dot active" />
-                <BellRing size={13} />
-                <span className="push-label">Alertas ON</span>
               </>
             ) : (
               <>

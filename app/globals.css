@@ -192,9 +192,15 @@ body {
 }
 
 .push-indicator-btn.is-active {
-  border-color: rgba(22, 163, 74, 0.32);
-  background: rgba(22, 163, 74, 0.07);
-  color: #15803d;
+  position: relative;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--secondary-foreground);
+  justify-content: center;
 }
 
 .push-indicator-btn:active {
@@ -214,8 +220,13 @@ body {
 }
 
 .push-dot.active {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
   background: #16a34a;
-  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+  box-shadow: 0 0 0 1.5px var(--background);
 }
 
 .push-label {
