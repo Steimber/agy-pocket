@@ -620,7 +620,6 @@ export default function AgyPocketPage() {
   const [pushStatus, setPushStatus] = useState('inactive'); // 'inactive' | 'active' | 'local'
   const [pushLoading, setPushLoading] = useState(false);
   const [pushNotice, setPushNotice] = useState('');
-  const [completionToast, setCompletionToast] = useState(null);
 
   const chatScrollRef = useRef(null);
   const sidebarDialogRef = useRef(null);
@@ -661,13 +660,6 @@ export default function AgyPocketPage() {
           item.conversationTitle || item.sessionTitle || item.title || 'Sesión completada';
         const projName = item.projectName || 'Antigravity';
         const bodyText = item.body || 'Antigravity terminó la tarea.';
-
-        setCompletionToast({
-          conversationId: item.conversationId,
-          title: sessionTitle,
-          projectName: projName,
-          body: bodyText
-        });
 
         // Local notification fallback when running in 'local' mode and tab is backgrounded
         if (
@@ -1482,40 +1474,6 @@ export default function AgyPocketPage() {
               className="icon-btn"
               onClick={() => setPushNotice('')}
               aria-label="Cerrar aviso"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {completionToast && (
-        <div className="status-banner completion-banner">
-          <div className="status-banner-copy">
-            <strong>
-              Tarea terminada · {completionToast.projectName} — {completionToast.title}
-            </strong>
-            <span>{completionToast.body}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            {completionToast.conversationId !== selectedConvId && (
-              <button
-                type="button"
-                className="pill-btn"
-                onClick={() => {
-                  const target = completionToast.conversationId;
-                  setCompletionToast(null);
-                  handleSelectConversation(target);
-                }}
-              >
-                Abrir sesión
-              </button>
-            )}
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => setCompletionToast(null)}
-              aria-label="Cerrar notificación"
             >
               <X size={14} />
             </button>
