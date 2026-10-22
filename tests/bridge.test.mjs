@@ -22,6 +22,11 @@ import {
   normalizeBridgeBaseUrl
 } from '../lib/bridge-crypto.js';
 
+import {
+  isValidPushSubscription,
+  stripMarkdownForNotification
+} from '../lib/push-manager.js';
+
 test('auth: permanent session token never expires over time and rejects tampering or invalid secrets', () => {
   const now = 1_700_000_000_000;
   const secret = 'test-secret-key-minimum-16-chars';
@@ -171,4 +176,56 @@ test('agy-bridge: parseTranscriptStepsToMessages preserves media attachments and
   assert.equal(messages[0].role, 'user');
   assert.equal(messages[0].media.length, 1);
   assert.equal(messages[0].media[0].name, 'capture_100%.png');
+});
+
+test('push-manager: validates HTTPS push subscriptions and cleans markdown notification previews', () => {
+  assert.equal(
+    isValidPushSubscription({
+      endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
+      keys: { p256dh: 'key_p256dh', auth: 'key_auth' }
+    }),
+    true
+  );
+  // Rejects non-HTTPS or missing keys
+  assert.equal(
+    isValidPushSubscription({
+      endpoint: 'http://fcm.googleapis.com/fcm/send/abc123',
+      keys: { p256dh: 'key_p256dh', auth: 'key_auth' }
+    }),
+    false
+  );
+  assert.equal(
+    isValidPushSubscription({
+      endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
+      keys: { p256dh: '', auth: 'key_auth' }
+    }),
+    false
+  );
+  // Rejects loopback, private LAN, and link-local HTTPS endpoints (SSRF protection)
+  assert.equal(
+    isValidPushSubscription({
+      endpoint: 'https://127.0.0.1:8443/push',
+      keys: { p256dh: 'key_p256dh', auth: 'key_auth' }
+    }),
+    false
+  );
+  assert.equal(
+    isValidPushSubscription({
+      endpoint: 'https://192.168.1.25/push',
+      keys: { p256dh: 'key_p256dh', auth: 'key_auth' }
+    }),
+    false
+  );
+  assert.equal(
+    isValidPushSubscription({
+      endpoint: 'https://localhost/push',
+      keys: { p256dh: 'key_p256dh', auth: 'key_auth' }
+    }),
+    false
+  );
+
+  const preview = stripMarkdownForNotification(
+    '¡Listo! Actualicé **`app/page.jsx`** y [push-manager.js](file:///c:/app/lib/push-manager.js).\n```js\nconsole.log(1);\n```'
+  );
+  assert.equal(preview, '¡Listo! Actualicé app/page.jsx y push-manager.js. [Código]');
 });

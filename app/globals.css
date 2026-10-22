@@ -165,8 +165,79 @@ body {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex-shrink: 0;
+}
+
+.push-indicator-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  border: 1px solid var(--card-border);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.push-indicator-btn.is-inactive {
+  border-color: rgba(16, 16, 16, 0.16);
+  background: var(--sidebar);
+}
+
+.push-indicator-btn.is-active {
+  border-color: rgba(22, 163, 74, 0.32);
+  background: rgba(22, 163, 74, 0.07);
+  color: #15803d;
+}
+
+.push-indicator-btn:active {
+  background: var(--secondary);
+}
+
+.push-dot {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.push-dot.inactive {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+}
+
+.push-dot.active {
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+}
+
+.push-label {
+  line-height: 1;
+}
+
+@media (max-width: 390px) {
+  .push-indicator-btn.is-inactive .push-label {
+    max-width: 112px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.completion-banner {
+  background: rgba(22, 163, 74, 0.08);
+  border-bottom-color: rgba(22, 163, 74, 0.22);
+}
+
+.push-banner .status-banner-copy span {
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .icon-btn {

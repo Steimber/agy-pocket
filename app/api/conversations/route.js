@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { isRequestAuthenticated } from '../../../lib/auth';
 import { getAntigravityLiveState } from '../../../lib/agy-bridge';
 import {
+  ensureBackgroundPushWatcher,
+  inspectLiveStateForCompletions,
+  getRecentCompletions
+} from '../../../lib/push-manager';
+import {
   shouldProxyToRemoteBridge,
   proxyToRemoteBridge
 } from '../../../lib/bridge-crypto';
@@ -29,6 +34,11 @@ export async function GET(request) {
     });
   }
 
+  ensureBackgroundPushWatcher();
   const state = await getAntigravityLiveState();
-  return NextResponse.json(state);
+  await inspectLiveStateForCompletions(state);
+  return NextResponse.json({
+    ...state,
+    recentCompletions: getRecentCompletions(Date.now() - 30000)
+  });
 }

@@ -4,6 +4,7 @@ out/
 .env
 .env.local
 .env.*.local
+.agy-push-state.json
 *.log
 .DS_Store
 Thumbs.db

@@ -11,11 +11,25 @@ import {
   LogOut,
   X,
   Paperclip,
-  PanelLeft
+  PanelLeft,
+  Bell,
+  BellRing
 } from 'lucide-react';
 
 const TOKEN_STORAGE_KEY = 'agy_pocket_token_v1';
 const LAST_CONV_STORAGE_KEY = 'agy_pocket_last_conv_v1';
+const PUSH_PREF_STORAGE_KEY = 'agy_pocket_push_enabled_v1';
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 export function AgyLogo({ size = 22, color = 'currentColor' }) {
   return (
@@ -603,12 +617,18 @@ export default function AgyPocketPage() {
   const [pendingAttachments, setPendingAttachments] = useState([]);
   const [sendError, setSendError] = useState('');
 
+  const [pushStatus, setPushStatus] = useState('inactive'); // 'inactive' | 'active' | 'local'
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushNotice, setPushNotice] = useState('');
+  const [completionToast, setCompletionToast] = useState(null);
+
   const chatScrollRef = useRef(null);
   const sidebarDialogRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const stickToBottomRef = useRef(true);
   const latestReqIdRef = useRef(0);
+  const seenCompletionsRef = useRef(new Set());
 
   const getAuthHeaders = useCallback(() => {
     const token =
@@ -625,11 +645,238 @@ export default function AgyPocketPage() {
     el.style.overflowY = sh > 180 ? 'auto' : 'hidden';
   }, []);
 
+  const processRecentCompletions = useCallback(
+    recentList => {
+      if (!Array.isArray(recentList) || recentList.length === 0) return;
+      for (const item of recentList) {
+        const completedAt = item?.completedAt || item?.ts;
+        if (!item?.conversationId || !completedAt) continue;
+        // Only surface completions that happened in the last 25 seconds
+        if (Date.now() - completedAt > 25000) continue;
+        const key = `${item.conversationId}:${completedAt}`;
+        if (seenCompletionsRef.current.has(key)) continue;
+        seenCompletionsRef.current.add(key);
+
+        const sessionTitle =
+          item.conversationTitle || item.sessionTitle || item.title || 'Sesión completada';
+        const projName = item.projectName || 'Antigravity';
+        const bodyText = item.body || 'Antigravity terminó la tarea.';
+
+        setCompletionToast({
+          conversationId: item.conversationId,
+          title: sessionTitle,
+          projectName: projName,
+          body: bodyText
+        });
+
+        // Local notification fallback when running in 'local' mode and tab is backgrounded
+        if (
+          pushStatus === 'local' &&
+          typeof document !== 'undefined' &&
+          document.visibilityState !== 'visible' &&
+          typeof Notification !== 'undefined' &&
+          Notification.permission === 'granted'
+        ) {
+          const notifTitle = `${projName} • ${sessionTitle}`;
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready
+              .then(reg =>
+                reg.showNotification(notifTitle, {
+                  body: bodyText,
+                  icon: '/icon.svg',
+                  badge: '/icon.svg',
+                  tag: `agy-done-${item.conversationId}`,
+                  data: { conversationId: item.conversationId }
+                })
+              )
+              .catch(() => {});
+          }
+        }
+      }
+    },
+    [pushStatus]
+  );
+
+  const syncPushStatus = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const reg = await navigator.serviceWorker.ready;
+        const existingSub = await reg.pushManager.getSubscription();
+        if (
+          existingSub &&
+          typeof Notification !== 'undefined' &&
+          Notification.permission === 'granted'
+        ) {
+          setPushStatus('active');
+          localStorage.setItem(PUSH_PREF_STORAGE_KEY, '1');
+          fetch('/api/push', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getAuthHeaders()
+            },
+            body: JSON.stringify({
+              action: 'subscribe',
+              subscription: existingSub.toJSON(),
+              sendWelcome: false,
+              userAgent: navigator.userAgent
+            })
+          }).catch(() => {});
+          return;
+        }
+      }
+      if (localStorage.getItem(PUSH_PREF_STORAGE_KEY) === '1') {
+        if (
+          typeof Notification !== 'undefined' &&
+          Notification.permission === 'granted'
+        ) {
+          setPushStatus('local');
+          return;
+        }
+      }
+      setPushStatus('inactive');
+    } catch {
+      setPushStatus('inactive');
+    }
+  }, [getAuthHeaders]);
+
+  const handleDisablePush = useCallback(async () => {
+    setPushLoading(true);
+    try {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const reg = await navigator.serviceWorker.ready;
+        const existingSub = await reg.pushManager.getSubscription();
+        if (existingSub) {
+          const endpoint = existingSub.endpoint;
+          await existingSub.unsubscribe().catch(() => {});
+          await fetch('/api/push', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getAuthHeaders()
+            },
+            body: JSON.stringify({ action: 'unsubscribe', endpoint })
+          }).catch(() => {});
+        }
+      }
+      localStorage.removeItem(PUSH_PREF_STORAGE_KEY);
+      setPushStatus('inactive');
+      setPushNotice('Notificaciones desactivadas.');
+    } catch {
+      localStorage.removeItem(PUSH_PREF_STORAGE_KEY);
+      setPushStatus('inactive');
+    } finally {
+      setPushLoading(false);
+    }
+  }, [getAuthHeaders]);
+
+  const handleTogglePush = useCallback(async () => {
+    if (pushLoading) return;
+    setPushLoading(true);
+    setPushNotice('');
+    try {
+      // If already active, send a live test push so the user can verify on their device
+      if (pushStatus === 'active' || pushStatus === 'local') {
+        if (pushStatus === 'active') {
+          const res = await fetch('/api/push', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getAuthHeaders()
+            },
+            body: JSON.stringify({ action: 'test', conversationId: selectedConvId || null })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.ok) {
+            setPushNotice('Alertas Push activas · Se envió una notificación de prueba.');
+          } else {
+            setPushNotice('Alertas Push activas para todas tus sesiones.');
+          }
+        } else {
+          setPushNotice(
+            'Alertas en vivo activas. En iPhone: usá Compartir → Agregar a pantalla de inicio para recibir Push con pantalla bloqueada.'
+          );
+        }
+        return;
+      }
+
+      if (typeof Notification !== 'undefined') {
+        const perm = await Notification.requestPermission();
+        if (perm === 'denied') {
+          setPushNotice(
+            'Permiso de notificaciones bloqueado en el navegador. Habilitalo en Ajustes del sitio.'
+          );
+          return;
+        }
+      }
+
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const reg = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+        if (reg.pushManager) {
+          const keyRes = await fetch('/api/push', { headers: getAuthHeaders() });
+          const keyData = await keyRes.json().catch(() => ({}));
+          if (keyRes.ok && keyData.publicKey) {
+            let sub = await reg.pushManager.getSubscription();
+            if (!sub) {
+              sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+              });
+            }
+            const subRes = await fetch('/api/push', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeaders()
+              },
+              body: JSON.stringify({
+                action: 'subscribe',
+                subscription: sub.toJSON(),
+                sendWelcome: true,
+                userAgent: navigator.userAgent
+              })
+            });
+            if (subRes.ok) {
+              localStorage.setItem(PUSH_PREF_STORAGE_KEY, '1');
+              setPushStatus('active');
+              setPushNotice(
+                '¡Notificaciones Push activadas! Te avisaremos cuando termine cualquier sesión.'
+              );
+              return;
+            }
+          }
+        }
+      }
+
+      // Fallback when iOS Safari is opened outside standalone Home Screen PWA mode
+      localStorage.setItem(PUSH_PREF_STORAGE_KEY, '1');
+      setPushStatus('local');
+      setPushNotice(
+        'Alertas en vivo activas. En iPhone: tocá Compartir → Agregar a pantalla de inicio para recibir Push con pantalla bloqueada.'
+      );
+    } catch {
+      localStorage.setItem(PUSH_PREF_STORAGE_KEY, '1');
+      setPushStatus('local');
+      setPushNotice(
+        'Alertas en vivo activas. Para Push con pantalla bloqueada en iOS, abrí la app desde tu Pantalla de inicio.'
+      );
+    } finally {
+      setPushLoading(false);
+    }
+  }, [pushLoading, pushStatus, selectedConvId, getAuthHeaders]);
+
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
-    const savedConv = localStorage.getItem(LAST_CONV_STORAGE_KEY) || '';
+    const params =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search)
+        : null;
+    const urlConvId = params?.get('conversationId') || '';
+    const savedConv = urlConvId || localStorage.getItem(LAST_CONV_STORAGE_KEY) || '';
     if (savedConv && savedConv !== '__new__') {
       setSelectedConvId(savedConv);
       setOptimisticConvId(savedConv);
@@ -656,6 +903,11 @@ export default function AgyPocketPage() {
       .finally(() => setAuthChecked(true));
   }, [getAuthHeaders]);
 
+  useEffect(() => {
+    if (!authenticated) return;
+    syncPushStatus();
+  }, [authenticated, syncPushStatus]);
+
   const fetchConversations = useCallback(async () => {
     try {
       const res = await fetch('/api/conversations', { headers: getAuthHeaders() });
@@ -669,6 +921,9 @@ export default function AgyPocketPage() {
       setIsBusy(Boolean(data.isBusy));
       if (data.model) setModel(data.model);
       if (data.preset) setPreset(data.preset);
+      if (data.recentCompletions) {
+        processRecentCompletions(data.recentCompletions);
+      }
 
       const projList = Array.isArray(data.projects) ? data.projects : [];
       setProjects(prev =>
@@ -689,7 +944,7 @@ export default function AgyPocketPage() {
         return nextId;
       });
     } catch {}
-  }, [getAuthHeaders]);
+  }, [getAuthHeaders, processRecentCompletions]);
 
   const fetchMessages = useCallback(
     async targetId => {
@@ -713,6 +968,9 @@ export default function AgyPocketPage() {
         setIsBusy(Boolean(data.isBusy));
         if (data.model) setModel(data.model);
         if (data.preset) setPreset(data.preset);
+        if (data.recentCompletions) {
+          processRecentCompletions(data.recentCompletions);
+        }
         if (
           (!convId || convId === '__new__') &&
           data.conversationId &&
@@ -755,7 +1013,7 @@ export default function AgyPocketPage() {
         }
       }
     },
-    [selectedConvId, getAuthHeaders]
+    [selectedConvId, getAuthHeaders, processRecentCompletions]
   );
 
   useEffect(() => {
@@ -919,34 +1177,49 @@ export default function AgyPocketPage() {
     }
   };
 
-  const handleSelectConversation = async convId => {
-    const isSame = convId === selectedConvId;
-    setOptimisticConvId(convId);
-    setSelectedConvId(convId);
-    if (convId && convId !== '__new__') {
-      localStorage.setItem(LAST_CONV_STORAGE_KEY, convId);
-    }
-    sidebarDialogRef.current?.close();
-    if (!isSame) {
-      setMessages([]);
-      setOptimisticPrompts([]);
-      setLoadingMessages(true);
-    }
-    stickToBottomRef.current = true;
+  const handleSelectConversation = useCallback(
+    async convId => {
+      const isSame = convId === selectedConvId;
+      setOptimisticConvId(convId);
+      setSelectedConvId(convId);
+      if (convId && convId !== '__new__') {
+        localStorage.setItem(LAST_CONV_STORAGE_KEY, convId);
+      }
+      sidebarDialogRef.current?.close();
+      if (!isSame) {
+        setMessages([]);
+        setOptimisticPrompts([]);
+        setLoadingMessages(true);
+      }
+      stickToBottomRef.current = true;
 
-    fetch('/api/action', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders()
-      },
-      body: JSON.stringify({ action: 'switch_conversation', conversationId: convId })
-    }).catch(() => {});
+      fetch('/api/action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ action: 'switch_conversation', conversationId: convId })
+      }).catch(() => {});
 
-    if (isSame) {
-      fetchMessages(convId);
-    }
-  };
+      if (isSame) {
+        fetchMessages(convId);
+      }
+    },
+    [selectedConvId, getAuthHeaders, fetchMessages]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    const onSwMessage = event => {
+      const msg = event?.data;
+      if (msg?.type === 'AGY_OPEN_CONVERSATION' && msg.conversationId) {
+        handleSelectConversation(msg.conversationId);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
+  }, [handleSelectConversation]);
 
   const handleToggleProject = async projectName => {
     setProjects(prev =>
@@ -1132,6 +1405,40 @@ export default function AgyPocketPage() {
         <div className="header-actions">
           <button
             type="button"
+            className={`push-indicator-btn ${
+              pushStatus === 'active' || pushStatus === 'local' ? 'is-active' : 'is-inactive'
+            }`}
+            onClick={handleTogglePush}
+            disabled={pushLoading}
+            aria-label={
+              pushStatus === 'active' || pushStatus === 'local'
+                ? 'Notificaciones activas (tocar para probar)'
+                : 'Activar notificaciones push'
+            }
+            title={
+              pushStatus === 'active' || pushStatus === 'local'
+                ? 'Notificaciones activas (tocar para enviar prueba)'
+                : 'Activar notificaciones cuando termine una tarea en cualquier sesión'
+            }
+          >
+            {pushStatus === 'active' || pushStatus === 'local' ? (
+              <>
+                <span className="push-dot active" />
+                <BellRing size={13} />
+                <span className="push-label">Alertas ON</span>
+              </>
+            ) : (
+              <>
+                <span className="push-dot inactive" />
+                <Bell size={13} />
+                <span className="push-label">
+                  {pushLoading ? 'Activando...' : 'Activar notificaciones'}
+                </span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
             className="icon-btn"
             onClick={() => handleNewConversation(activeConvObj?.projectName || null)}
             aria-label="Nueva conversación"
@@ -1153,6 +1460,69 @@ export default function AgyPocketPage() {
           </button>
         </div>
       </header>
+
+      {pushNotice && (
+        <div className="status-banner push-banner">
+          <div className="status-banner-copy">
+            <strong>Notificaciones</strong>
+            <span>{pushNotice}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {(pushStatus === 'active' || pushStatus === 'local') && (
+              <button
+                type="button"
+                className="pill-btn"
+                onClick={handleDisablePush}
+                disabled={pushLoading}
+              >
+                Desactivar
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setPushNotice('')}
+              aria-label="Cerrar aviso"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {completionToast && (
+        <div className="status-banner completion-banner">
+          <div className="status-banner-copy">
+            <strong>
+              Tarea terminada · {completionToast.projectName} — {completionToast.title}
+            </strong>
+            <span>{completionToast.body}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {completionToast.conversationId !== selectedConvId && (
+              <button
+                type="button"
+                className="pill-btn"
+                onClick={() => {
+                  const target = completionToast.conversationId;
+                  setCompletionToast(null);
+                  handleSelectConversation(target);
+                }}
+              >
+                Abrir sesión
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setCompletionToast(null)}
+              aria-label="Cerrar notificación"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {sendError && (
         <div className="status-banner">

@@ -7,6 +7,10 @@ import {
   sendPromptToAntigravity
 } from '../../../lib/agy-bridge';
 import {
+  ensureBackgroundPushWatcher,
+  getRecentCompletions
+} from '../../../lib/push-manager';
+import {
   shouldProxyToRemoteBridge,
   proxyToRemoteBridge
 } from '../../../lib/bridge-crypto';
@@ -42,6 +46,7 @@ export async function GET(request) {
     });
   }
 
+  ensureBackgroundPushWatcher();
   const live = await getAntigravityQuickStatus();
 
   if (conversationId === '__new__') {
@@ -63,6 +68,7 @@ export async function GET(request) {
     model: live.model,
     preset: live.preset,
     isBusy: live.isBusy,
+    recentCompletions: getRecentCompletions(Date.now() - 30000),
     ...transcript
   });
 }
