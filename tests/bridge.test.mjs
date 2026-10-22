@@ -24,7 +24,8 @@ import {
 
 import {
   isValidPushSubscription,
-  stripMarkdownForNotification
+  stripMarkdownForNotification,
+  VAPID_SUBJECT
 } from '../lib/push-manager.js';
 
 test('auth: permanent session token never expires over time and rejects tampering or invalid secrets', () => {
@@ -228,4 +229,7 @@ test('push-manager: validates HTTPS push subscriptions and cleans markdown notif
     '¡Listo! Actualicé **`app/page.jsx`** y [push-manager.js](file:///c:/app/lib/push-manager.js).\n```js\nconsole.log(1);\n```'
   );
   assert.equal(preview, '¡Listo! Actualicé app/page.jsx y push-manager.js. [Código]');
+
+  // VAPID subject must use a valid domain with a TLD so Apple Web Push (web.push.apple.com) never returns 403 BadJwtToken
+  assert.match(VAPID_SUBJECT, /^mailto:[^@]+@[^@.]+\.[a-z]{2,}$/i);
 });
