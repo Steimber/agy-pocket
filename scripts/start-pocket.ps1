@@ -39,7 +39,7 @@ $LanIp = (
 )
 
 Write-Host "=====================================================" -ForegroundColor Cyan
-Write-Host "  AGY POCKET - SESIÓN PERSISTENTE (90 DÍAS)          " -ForegroundColor Cyan
+Write-Host "  AGY POCKET - SESION PERSISTENTE (90 DIAS)          " -ForegroundColor Cyan
 Write-Host "=====================================================" -ForegroundColor Cyan
 Write-Host "  Local PC:   http://localhost:$Port" -ForegroundColor Green
 if ($LanIp) {
@@ -47,7 +47,7 @@ if ($LanIp) {
 }
 
 if (-not (Test-Path ".next\BUILD_ID")) {
-  Write-Host "[*] Construyendo versión optimizada de producción..." -ForegroundColor Gray
+  Write-Host "[*] Construyendo version optimizada de produccion..." -ForegroundColor Gray
   npm run build
 }
 
@@ -60,7 +60,7 @@ if (-not $NoTunnel) {
     }
     $CloudflaredExe = Join-Path $AppDataBinDir "cloudflared.exe"
     if (-not (Test-Path $CloudflaredExe)) {
-      Write-Host "[*] Descargando cliente de túnel Cloudflare (una sola vez en AppData)..." -ForegroundColor Gray
+      Write-Host "[*] Descargando cliente de tunel Cloudflare (una sola vez en AppData)..." -ForegroundColor Gray
       Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile $CloudflaredExe
     }
 
@@ -82,11 +82,11 @@ if (-not $NoTunnel) {
     }
 
     if ($TunnelUrl) {
-      Write-Host "  Túnel Remoto: $TunnelUrl" -ForegroundColor Cyan
+      Write-Host "  Tunel Remoto: $TunnelUrl" -ForegroundColor Cyan
       node .\scripts\publish-bridge.mjs $TunnelUrl
     }
   } catch {
-    Write-Host "[WARN] No se pudo iniciar el túnel remoto automático: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    Write-Host "[WARN] No se pudo iniciar el tunel remoto automatico: $($_.Exception.Message)" -ForegroundColor DarkYellow
   }
 }
 
