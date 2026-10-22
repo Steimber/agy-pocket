@@ -1186,6 +1186,22 @@ dialog.sidebar-drawer::backdrop {
   flex-shrink: 0;
 }
 
+.agy-status-spinner {
+  flex-shrink: 0;
+  color: var(--foreground);
+  opacity: 0.7;
+  animation: agyStatusSpin 0.9s linear infinite;
+}
+
+@keyframes agyStatusSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
 /* Login Gate (Antigravity White Style) */
 .login-card {
   margin: auto;

@@ -50,6 +50,22 @@ function AgyFolderIcon({ size = 16 }) {
   );
 }
 
+function AgySpinnerIcon({ size = 15 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 -960 960 960"
+      fill="currentColor"
+      className="agy-status-spinner"
+      aria-label="Running"
+    >
+      <path d="M332.55-129.9q-69.29-29.9-121.02-81.63T129.9-332.55T100-480.35t29.96-147.5t81.58-120.61t121.04-81.58T480-860q12.75,0 21.37,8.63T510-829.99t-8.62,21.37T480-800q-133,0-226.5,93.5T160-480t93.5,226.5T480-160t226.5-93.5T800-480q0-12.77 8.63-21.38T830.01-510t21.37,8.62T860-480q0,77.99-29.96,147.42T748.46-211.54T627.85-129.96T480.35-100t-147.8-29.9Z" />
+    </svg>
+  );
+}
+
 function AgyThinkingSvg({ size = 18, active = true }) {
   return (
     <svg
@@ -1106,11 +1122,11 @@ export default function AgyPocketPage() {
               {activeConvObj?.title || 'Antigravity'}
             </div>
           </div>
-          <span
-            className={`status-dot ${
-              isBusy ? 'busy' : connected ? 'online' : ''
-            }`}
-          />
+          {isBusy ? (
+            <AgySpinnerIcon size={15} />
+          ) : (
+            <span className={`status-dot ${connected ? 'online' : ''}`} />
+          )}
         </button>
 
         <div className="header-actions">
@@ -1542,6 +1558,7 @@ export default function AgyPocketPage() {
               {proj.expanded &&
                 (proj.conversations || []).map(c => {
                   const isSel = c.id === (optimisticConvId || selectedConvId);
+                  const rowRunning = Boolean(c.isRunning || (isSel && isBusy));
                   return (
                     <button
                       key={c.id}
@@ -1550,7 +1567,9 @@ export default function AgyPocketPage() {
                       onClick={() => handleSelectConversation(c.id)}
                     >
                       <span className="session-title">{c.title}</span>
-                      {c.timeAgo ? (
+                      {rowRunning ? (
+                        <AgySpinnerIcon size={15} />
+                      ) : c.timeAgo ? (
                         <span className="session-time">{c.timeAgo}</span>
                       ) : null}
                     </button>
@@ -1564,6 +1583,7 @@ export default function AgyPocketPage() {
               <div className="sidebar-section-label">Recent Sessions</div>
               {ungroupedConversations.map(c => {
                 const isSel = c.id === (optimisticConvId || selectedConvId);
+                const rowRunning = Boolean(c.isRunning || (isSel && isBusy));
                 return (
                   <button
                     key={c.id}
@@ -1573,7 +1593,9 @@ export default function AgyPocketPage() {
                     onClick={() => handleSelectConversation(c.id)}
                   >
                     <span className="session-title">{c.title}</span>
-                    {c.timeAgo ? (
+                    {rowRunning ? (
+                      <AgySpinnerIcon size={15} />
+                    ) : c.timeAgo ? (
                       <span className="session-time">{c.timeAgo}</span>
                     ) : null}
                   </button>
