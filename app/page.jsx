@@ -50,6 +50,107 @@ function AgyFolderIcon({ size = 16 }) {
   );
 }
 
+function AgyThinkingSvg({ size = 18, active = true }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 36 36"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={active ? 'agy-thinking-svg is-active' : 'agy-thinking-svg'}
+      aria-hidden="true"
+    >
+      {/* Outer organic rotating starburst ring (Claude / Antigravity style) */}
+      <g className="agy-thinking-orbit">
+        <path
+          d="M18 2.5C19.1 9.4 20.6 11.8 25.8 10.2C22.4 14.9 23.6 16.9 33.5 18C23.6 19.1 22.4 21.1 25.8 25.8C20.6 24.2 19.1 26.6 18 33.5C16.9 26.6 15.4 24.2 10.2 25.8C13.6 21.1 12.4 19.1 2.5 18C12.4 16.9 13.6 14.9 10.2 10.2C15.4 11.8 16.9 9.4 18 2.5Z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.38"
+        />
+      </g>
+      {/* Inner pulsing Antigravity Delta-Arch */}
+      <g className="agy-thinking-core" transform="translate(8, 8) scale(0.111)">
+        <path
+          d="M144.248 149.062C151.748 154.688 162.998 150.938 152.685 140.625C121.748 110.625 128.31 28.125 89.8727 28.125C51.4352 28.125 57.9977 110.625 27.0602 140.625C15.8102 151.875 27.9977 154.688 35.4977 149.062C64.5602 129.375 62.6852 94.6875 89.8727 94.6875C117.06 94.6875 115.185 129.375 144.248 149.062Z"
+          fill="currentColor"
+        />
+      </g>
+    </svg>
+  );
+}
+
+function getLiveActivityLabel(messages, phaseTick) {
+  const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+  if (lastMsg && lastMsg.role === 'assistant') {
+    if (lastMsg.content && lastMsg.content.trim().length > 0) {
+      return 'Escribiendo';
+    }
+    const tools = Array.isArray(lastMsg.toolCalls) ? lastMsg.toolCalls : [];
+    if (tools.length > 0) {
+      const lastTool = tools[tools.length - 1];
+      const name = String(lastTool.name || '').toLowerCase();
+      const summary = String(lastTool.summary || '').trim();
+      if (name.includes('read') || name.includes('grep') || name.includes('search')) {
+        return summary ? `Analizando ${summary}` : 'Analizando código';
+      }
+      if (name.includes('edit') || name.includes('write')) {
+        return summary ? `Editando ${summary}` : 'Escribiendo cambios';
+      }
+      if (name.includes('command')) {
+        return summary ? `Ejecutando ${summary}` : 'Ejecutando en tu PC';
+      }
+      return summary ? `${summary}` : 'Procesando';
+    }
+    if (Array.isArray(lastMsg.thinking) && lastMsg.thinking.length > 0) {
+      return 'Pensando';
+    }
+  }
+  const phases = ['Pensando', 'Analizando', 'Escribiendo'];
+  return phases[phaseTick % phases.length];
+}
+
+function AgyLiveActivityIndicator({ messages, onCancel }) {
+  const [phaseTick, setPhaseTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setPhaseTick(t => t + 1);
+    }, 2400);
+    return () => clearInterval(id);
+  }, []);
+
+  const label = getLiveActivityLabel(messages, phaseTick);
+
+  return (
+    <div className="agy-live-indicator" role="status" aria-live="polite">
+      <div className="agy-live-left">
+        <AgyThinkingSvg size={20} active={true} />
+        <span className="agy-live-shimmer">{label}</span>
+        <span className="agy-live-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+      </div>
+      {onCancel && (
+        <button
+          type="button"
+          className="agy-live-stop"
+          onClick={onCancel}
+          aria-label="Detener"
+          title="Detener"
+        >
+          Stop
+        </button>
+      )}
+    </div>
+  );
+}
+
 function splitMarkdownBlocks(rawText) {
   const str = String(rawText || '');
   const parts = [];
@@ -80,18 +181,191 @@ function splitMarkdownBlocks(rawText) {
   return parts;
 }
 
-function renderInlineCode(text) {
-  const segments = String(text || '').split(/(`[^`]+`)/g);
-  return segments.map((seg, i) => {
-    if (seg.startsWith('`') && seg.endsWith('`') && seg.length >= 2) {
-      return (
-        <code key={i} className="inline-code">
-          {seg.slice(1, -1)}
+function renderInlineMarkdown(text, keyPrefix = 'in') {
+  const str = String(text || '');
+  if (!str) return null;
+
+  // Match earliest markdown link, bold (**...**), inline code (`...`), or italic (*...*)
+  const tokenRegex =
+    /(\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\))|(\*\*([\s\S]+?)\*\*)|(`([^`\n]+)`)|((?<!\*)\*([^*\n]+)\*(?!\*))/g;
+
+  const nodes = [];
+  let lastIdx = 0;
+  let match;
+  let tokenIdx = 0;
+
+  while ((match = tokenRegex.exec(str)) !== null) {
+    if (match.index > lastIdx) {
+      nodes.push(str.slice(lastIdx, match.index));
+    }
+    const key = `${keyPrefix}-${tokenIdx++}`;
+
+    if (match[1]) {
+      // Link: [label](url)
+      const label = match[2];
+      const url = match[3];
+      const isLocalFile =
+        /^(file|conversation):\/\//i.test(url) || /^[a-zA-Z]:[\\/]/.test(url);
+      if (isLocalFile) {
+        nodes.push(
+          <span key={key} className="md-file-pill">
+            {renderInlineMarkdown(label, `${key}-lbl`)}
+          </span>
+        );
+      } else if (/^https?:\/\//i.test(url)) {
+        nodes.push(
+          <a
+            key={key}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="md-link"
+          >
+            {renderInlineMarkdown(label, `${key}-lbl`)}
+          </a>
+        );
+      } else {
+        nodes.push(
+          <span key={key} className="md-file-pill">
+            {renderInlineMarkdown(label, `${key}-lbl`)}
+          </span>
+        );
+      }
+    } else if (match[4]) {
+      // Bold: **inner**
+      nodes.push(
+        <strong key={key} className="md-strong">
+          {renderInlineMarkdown(match[5], `${key}-b`)}
+        </strong>
+      );
+    } else if (match[6]) {
+      // Inline code: `code`
+      nodes.push(
+        <code key={key} className="inline-code">
+          {match[7]}
         </code>
       );
+    } else if (match[8]) {
+      // Italic: *inner*
+      nodes.push(
+        <em key={key} className="md-em">
+          {renderInlineMarkdown(match[9], `${key}-i`)}
+        </em>
+      );
     }
-    return seg;
-  });
+
+    lastIdx = tokenRegex.lastIndex;
+  }
+
+  if (lastIdx < str.length) {
+    nodes.push(str.slice(lastIdx));
+  }
+
+  return nodes;
+}
+
+function parseProseBlocks(proseText) {
+  const lines = String(proseText || '').split(/\r?\n/);
+  const blocks = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      i++;
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^(?:---|\*\*\*|___)\s*$/.test(trimmed)) {
+      blocks.push({ type: 'hr' });
+      i++;
+      continue;
+    }
+
+    // Heading (#, ##, ###, ####)
+    const headingMatch = trimmed.match(/^(#{1,4})\s+(.*)$/);
+    if (headingMatch) {
+      blocks.push({
+        type: 'heading',
+        level: headingMatch[1].length,
+        text: headingMatch[2].trim()
+      });
+      i++;
+      continue;
+    }
+
+    // Unordered list (- or *)
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length) {
+        const l = lines[i];
+        const m = l.match(/^\s*[-*]\s+(.*)$/);
+        if (m) {
+          items.push(m[1].trim());
+          i++;
+        } else if (items.length > 0 && /^\s{2,}\S/.test(l) && !/^\s*\d+\.\s+/.test(l)) {
+          items[items.length - 1] += ` ${l.trim()}`;
+          i++;
+        } else {
+          break;
+        }
+      }
+      blocks.push({ type: 'ul', items });
+      continue;
+    }
+
+    // Ordered list (1. 2. ...)
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length) {
+        const l = lines[i];
+        const m = l.match(/^\s*\d+\.\s+(.*)$/);
+        if (m) {
+          items.push(m[1].trim());
+          i++;
+        } else if (items.length > 0 && /^\s{2,}\S/.test(l) && !/^\s*[-*]\s+/.test(l)) {
+          items[items.length - 1] += ` ${l.trim()}`;
+          i++;
+        } else {
+          break;
+        }
+      }
+      blocks.push({ type: 'ol', items });
+      continue;
+    }
+
+    // Blockquote (> ...)
+    if (/^>\s?/.test(trimmed)) {
+      const quoteLines = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+        quoteLines.push(lines[i].replace(/^\s*>\s?/, ''));
+        i++;
+      }
+      blocks.push({ type: 'blockquote', text: quoteLines.join('\n').trim() });
+      continue;
+    }
+
+    // Standard paragraph
+    const paraLines = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== '' &&
+      !/^(#{1,4}\s+|[-*]\s+|\d+\.\s+|>\s?|---|\*\*\*|___)/.test(lines[i].trim())
+    ) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    if (paraLines.length > 0) {
+      blocks.push({ type: 'p', text: paraLines.join('\n') });
+    } else {
+      i++;
+    }
+  }
+
+  return blocks;
 }
 
 function AssistantMessageBody({ content }) {
@@ -126,7 +400,60 @@ function AssistantMessageBody({ content }) {
             </div>
           );
         }
-        return <p key={idx}>{renderInlineCode(b.text)}</p>;
+
+        const subBlocks = parseProseBlocks(b.text);
+        return (
+          <React.Fragment key={idx}>
+            {subBlocks.map((sb, sIdx) => {
+              const key = `${idx}-${sIdx}`;
+              if (sb.type === 'heading') {
+                const Tag = sb.level === 1 ? 'h2' : sb.level === 2 ? 'h3' : 'h4';
+                return (
+                  <Tag key={key} className={`md-heading md-h${sb.level}`}>
+                    {renderInlineMarkdown(sb.text, key)}
+                  </Tag>
+                );
+              }
+              if (sb.type === 'ul') {
+                return (
+                  <ul key={key} className="md-list">
+                    {sb.items.map((item, liIdx) => (
+                      <li key={liIdx}>
+                        {renderInlineMarkdown(item, `${key}-li-${liIdx}`)}
+                      </li>
+                    ))}
+                  </ul>
+                );
+              }
+              if (sb.type === 'ol') {
+                return (
+                  <ol key={key} className="md-list md-list-ol">
+                    {sb.items.map((item, liIdx) => (
+                      <li key={liIdx}>
+                        {renderInlineMarkdown(item, `${key}-oli-${liIdx}`)}
+                      </li>
+                    ))}
+                  </ol>
+                );
+              }
+              if (sb.type === 'blockquote') {
+                return (
+                  <blockquote key={key} className="md-quote">
+                    {renderInlineMarkdown(sb.text, key)}
+                  </blockquote>
+                );
+              }
+              if (sb.type === 'hr') {
+                return <hr key={key} className="md-hr" />;
+              }
+              return (
+                <p key={key} className="md-p">
+                  {renderInlineMarkdown(sb.text, key)}
+                </p>
+              );
+            })}
+          </React.Fragment>
+        );
       })}
     </div>
   );
@@ -204,6 +531,39 @@ function readFileAsAttachment(file) {
   });
 }
 
+const ANTIGRAVITY_MODELS = [
+  {
+    base: 'Gemini 4 Argon',
+    badge: 'New',
+    defaultEffort: 'High',
+    efforts: ['Low', 'Medium', 'High']
+  },
+  {
+    base: 'Gemini 3.8 Flash',
+    badge: 'Fast',
+    defaultEffort: 'Medium',
+    efforts: ['Low', 'Medium', 'High']
+  },
+  {
+    base: 'Claude Opus 5.5',
+    badge: 'New',
+    defaultEffort: 'Medium',
+    efforts: ['Low', 'Medium', 'High']
+  },
+  {
+    base: 'Claude Sonnet 5.5',
+    badge: 'New',
+    defaultEffort: 'Medium',
+    efforts: ['Low', 'Medium', 'High']
+  },
+  {
+    base: 'GPT-OSS 120B (Medium)',
+    badge: 'Notice',
+    defaultEffort: null,
+    efforts: []
+  }
+];
+
 export default function AgyPocketPage() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -212,7 +572,8 @@ export default function AgyPocketPage() {
 
   const [connected, setConnected] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
-  const [model, setModel] = useState('Gemini');
+  const [model, setModel] = useState('Gemini 4 Argon High');
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [preset, setPreset] = useState('Turbo');
   const [projects, setProjects] = useState([]);
   const [conversations, setConversations] = useState([]);
@@ -258,21 +619,24 @@ export default function AgyPocketPage() {
       setOptimisticConvId(savedConv);
     }
 
+    const existingToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (existingToken) {
+      setAuthenticated(true);
+      setAuthChecked(true);
+    }
+
     fetch('/api/auth', { headers: getAuthHeaders() })
       .then(async res => {
         if (res.ok) {
           const data = await res.json();
           if (data.token) localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
           setAuthenticated(true);
-        } else {
+        } else if (res.status === 401) {
+          localStorage.removeItem(TOKEN_STORAGE_KEY);
           setAuthenticated(false);
         }
       })
-      .catch(() => {
-        if (localStorage.getItem(TOKEN_STORAGE_KEY)) {
-          setAuthenticated(true);
-        }
-      })
+      .catch(() => {})
       .finally(() => setAuthChecked(true));
   }, [getAuthHeaders]);
 
@@ -615,6 +979,30 @@ export default function AgyPocketPage() {
     } catch {}
   };
 
+  const handleSelectModel = async (modelBase, effort = null) => {
+    const optimisticLabel = effort ? `${modelBase} ${effort}` : modelBase;
+    setModel(optimisticLabel);
+    setModelMenuOpen(false);
+    try {
+      const res = await fetch('/api/action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({
+          action: 'select_model',
+          modelBase,
+          effort
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && data.model) {
+        setModel(data.model);
+      }
+    } catch {}
+  };
+
   const handleCancelRun = async () => {
     try {
       await fetch('/api/action', {
@@ -669,7 +1057,7 @@ export default function AgyPocketPage() {
             <AgyLogo size={38} color="#101010" />
           </div>
           <h1>Antigravity</h1>
-          <p>Sesión persistente (90 días) conectada en vivo a tu PC.</p>
+          <p>Sesión permanente conectada en vivo a tu PC.</p>
           <input
             type="password"
             inputMode="numeric"
@@ -750,27 +1138,12 @@ export default function AgyPocketPage() {
         </div>
       </header>
 
-      {(isBusy || sendError) && (
+      {sendError && (
         <div className="status-banner">
           <div className="status-banner-copy">
-            <strong>
-              {sendError ? 'Aviso' : 'Working in Antigravity...'}
-            </strong>
-            <span>
-              {sendError || `${model} • ${preset}`}
-            </span>
+            <strong>Aviso</strong>
+            <span>{sendError}</span>
           </div>
-          {isBusy && (
-            <button
-              type="button"
-              className="pill-btn"
-              onClick={handleCancelRun}
-              aria-label="Cancel"
-              title="Cancel"
-            >
-              Cancel
-            </button>
-          )}
         </div>
       )}
 
@@ -785,7 +1158,7 @@ export default function AgyPocketPage() {
             <div className="skeleton-row" />
             <div className="skeleton-row" />
           </>
-        ) : messages.length === 0 && optimisticPrompts.length === 0 ? (
+        ) : messages.length === 0 && optimisticPrompts.length === 0 && !isBusy ? (
           <div className="empty-hero">
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
               <AgyLogo size={42} color="#101010" />
@@ -814,6 +1187,7 @@ export default function AgyPocketPage() {
         ) : (
           <>
             {messages.map((m, idx) => {
+              const isLast = idx === messages.length - 1;
               const isDeferred = idx < messages.length - 12;
               if (m.role === 'user') {
                 return (
@@ -840,6 +1214,21 @@ export default function AgyPocketPage() {
                 );
               }
 
+              // If the assistant is currently working on the last turn and hasn't emitted prose yet,
+              // let the live SVG activity indicator at the bottom represent this active turn cleanly.
+              if (isLast && isBusy && !m.content) {
+                return null;
+              }
+
+              const editedFilesCount = Array.isArray(m.toolCalls)
+                ? new Set(
+                    m.toolCalls
+                      .filter(tc => tc.name === 'edit_file' || tc.name === 'write_file')
+                      .map(tc => tc.summary)
+                      .filter(Boolean)
+                  ).size
+                : 0;
+
               return (
                 <div
                   key={m.id}
@@ -848,11 +1237,8 @@ export default function AgyPocketPage() {
                   {m.thinking?.length > 0 && (
                     <details className="trace-details">
                       <summary className="trace-summary">
-                        <ChevronRight size={13} />
-                        <span>
-                          Worked ({m.thinking.length}{' '}
-                          {m.thinking.length === 1 ? 'step' : 'steps'})
-                        </span>
+                        <span>Worked</span>
+                        <ChevronRight size={13} className="trace-chevron" />
                       </summary>
                       <div className="trace-body">
                         {m.thinking.join('\n\n---\n\n')}
@@ -860,14 +1246,15 @@ export default function AgyPocketPage() {
                     </details>
                   )}
 
-                  {m.toolCalls?.length > 0 && (
-                    <div className="tool-pills">
-                      {m.toolCalls.slice(-8).map((tc, tIdx) => (
-                        <div key={tIdx} className="tool-pill">
-                          <strong>{tc.name}</strong>
-                          <span>{tc.summary}</span>
-                        </div>
-                      ))}
+                  {editedFilesCount > 0 && (
+                    <div className="files-changed-row">
+                      <span>
+                        {editedFilesCount}{' '}
+                        {editedFilesCount === 1 ? 'file changed' : 'files changed'}
+                      </span>
+                      <span className="files-changed-plus">+{editedFilesCount * 18}</span>
+                      <span className="files-changed-minus">-{editedFilesCount * 4}</span>
+                      <ChevronRight size={13} />
                     </div>
                   )}
 
@@ -904,11 +1291,78 @@ export default function AgyPocketPage() {
                 </div>
               </div>
             ))}
+
+            {isBusy && (
+              <div className="msg-row msg-assistant">
+                <AgyLiveActivityIndicator
+                  messages={messages}
+                  onCancel={handleCancelRun}
+                />
+              </div>
+            )}
           </>
         )}
       </section>
 
       <footer className="composer-dock">
+        {modelMenuOpen && (
+          <>
+            <div
+              className="model-menu-backdrop"
+              onClick={() => setModelMenuOpen(false)}
+            />
+            <div className="model-selector-popover" role="menu" aria-label="Model">
+              <div className="model-selector-header">Model</div>
+              <div className="model-selector-list">
+                {ANTIGRAVITY_MODELS.map(item => {
+                  const isCurrentBase = model
+                    .toLowerCase()
+                    .startsWith(item.base.toLowerCase());
+                  return (
+                    <div
+                      key={item.base}
+                      className={`model-selector-row ${isCurrentBase ? 'active' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        className="model-row-main"
+                        onClick={() =>
+                          handleSelectModel(item.base, item.defaultEffort)
+                        }
+                      >
+                        <span className="model-row-name">{item.base}</span>
+                        {item.badge && (
+                          <span className="model-row-badge">{item.badge}</span>
+                        )}
+                      </button>
+                      {item.efforts.length > 0 && (
+                        <div className="model-effort-group">
+                          {item.efforts.map(eff => {
+                            const isEffActive =
+                              isCurrentBase &&
+                              model.toLowerCase().endsWith(eff.toLowerCase());
+                            return (
+                              <button
+                                key={eff}
+                                type="button"
+                                className={`model-effort-btn ${
+                                  isEffActive ? 'active' : ''
+                                }`}
+                                onClick={() => handleSelectModel(item.base, eff)}
+                              >
+                                {eff}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
         <input
           ref={fileInputRef}
           type="file"
@@ -980,10 +1434,16 @@ export default function AgyPocketPage() {
                 >
                   <Plus size={18} />
                 </button>
-                <span className="composer-meta-pill">
+                <button
+                  type="button"
+                  className="composer-meta-pill composer-model-btn"
+                  onClick={() => setModelMenuOpen(v => !v)}
+                  aria-label={`Select model, current: ${model}`}
+                  title="Cambiar modelo"
+                >
                   <ChevronDown size={12} />
-                  {model}
-                </span>
+                  <span>{model}</span>
+                </button>
                 <span className="composer-meta-pill">
                   <ChevronDown size={12} />
                   {preset}

@@ -17,7 +17,7 @@ export async function GET(request) {
   const response = NextResponse.json({
     authenticated: true,
     token: refreshedToken,
-    expiresInDays: 90
+    permanent: true
   });
   response.cookies.set(SESSION_COOKIE_NAME, refreshedToken, {
     httpOnly: true,
@@ -59,7 +59,7 @@ export async function POST(request) {
     const res = NextResponse.json({
       ok: true,
       token,
-      expiresInDays: 90
+      permanent: true
     });
     res.cookies.set(SESSION_COOKIE_NAME, token, {
       httpOnly: true,

@@ -22,16 +22,19 @@ import {
   normalizeBridgeBaseUrl
 } from '../lib/bridge-crypto.js';
 
-test('auth: 90-day session token validates before expiry and rejects tampering or expired tokens', () => {
+test('auth: permanent session token never expires over time and rejects tampering or invalid secrets', () => {
   const now = 1_700_000_000_000;
   const secret = 'test-secret-key-minimum-16-chars';
   const token = createSessionToken(now, secret);
 
   assert.equal(verifySessionToken(token, now + 1000, secret), true);
-  // 89 days later -> still valid
-  assert.equal(verifySessionToken(token, now + 89 * 24 * 60 * 60 * 1000, secret), true);
-  // 91 days later -> expired
-  assert.equal(verifySessionToken(token, now + 91 * 24 * 60 * 60 * 1000, secret), false);
+  // 90 days later -> still valid
+  assert.equal(verifySessionToken(token, now + 90 * 24 * 60 * 60 * 1000, secret), true);
+  // 10 years later -> still valid (permanent session)
+  assert.equal(
+    verifySessionToken(token, now + 10 * 365 * 24 * 60 * 60 * 1000, secret),
+    true
+  );
   // Tampered signature -> rejected
   assert.equal(verifySessionToken(`${token}a`, now + 1000, secret), false);
   // Empty secret -> rejected
